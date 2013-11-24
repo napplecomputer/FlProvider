@@ -1,26 +1,42 @@
 
 package co.natsuhi.flprovider;
 
+import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.List;
+import java.util.Locale;
 
 import net.yanzm.flashairdev.FlashAirFileInfo;
 import net.yanzm.flashairdev.FlashAirUtils;
-import android.R.integer;
+import android.annotation.SuppressLint;
+import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.database.MatrixCursor.RowBuilder;
+import android.graphics.Point;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract.Document;
 import android.provider.DocumentsContract.Root;
 import android.provider.DocumentsProvider;
-import android.util.Log;
+import android.webkit.MimeTypeMap;
 import co.natsuhi.flprovider.util.LogUtil;
 
 public class FlashAirProvider extends DocumentsProvider {
     private static final String TAG = "FlashAirProvider";
     private final FlashAirProvider self = this;
+    private static final String ROOT_DOCUMENT_ID = "flashairroot";
+    private final int BUFFER_SIZE = 1024;
+    private static final String MIMETYPE_UNKNOWN = "unknown/unknown";
+
+    private byte[] buffer = new byte[BUFFER_SIZE];
 
     @Override
     public boolean onCreate() {
@@ -37,7 +53,7 @@ public class FlashAirProvider extends DocumentsProvider {
         final MatrixCursor.RowBuilder row = cursor.newRow();
         row.add(Root.COLUMN_ROOT_ID, FlashAirProvider.class.getName() + ".flashair");
         row.add(Root.COLUMN_TITLE, "FlashAir");
-        row.add(Root.COLUMN_DOCUMENT_ID, "/");
+        row.add(Root.COLUMN_DOCUMENT_ID, ROOT_DOCUMENT_ID);
         row.add(Root.COLUMN_MIME_TYPES, "*/*");
         row.add(Root.COLUMN_AVAILABLE_BYTES, Integer.MAX_VALUE);
         row.add(Root.COLUMN_ICON, R.drawable.ic_launcher);
@@ -69,7 +85,7 @@ public class FlashAirProvider extends DocumentsProvider {
         LogUtil.d(TAG, "queryDocument");
         LogUtil.d(TAG, "documentId is " + documentId);
         MatrixCursor cursor = new MatrixCursor(resolveDocumentProjection(projection));
-        includeFile(cursor, documentId);
+        includeRootFile(cursor, documentId);
         return cursor;
     }
 
@@ -89,6 +105,22 @@ public class FlashAirProvider extends DocumentsProvider {
         }
     }
 
+    /**
+     * RootDir用
+     * 
+     * @param cursor
+     * @param documentId
+     */
+    private void includeRootFile(MatrixCursor cursor, String documentId) {
+        RowBuilder row = cursor.newRow();
+        row.add(Document.COLUMN_DISPLAY_NAME, "/");
+        row.add(Document.COLUMN_DOCUMENT_ID, "/");
+        row.add(Document.COLUMN_SIZE, null);
+        row.add(Document.COLUMN_FLAGS, Document.FLAG_DIR_PREFERS_LAST_MODIFIED);
+        row.add(Document.COLUMN_LAST_MODIFIED, null);
+        row.add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR);
+    }
+
     private void includeFile(MatrixCursor cursor, String documentId) {
         LogUtil.d(TAG, "includeFile");
         List<FlashAirFileInfo> fileInfos = FlashAirUtils.getFileList(documentId);
@@ -100,16 +132,42 @@ public class FlashAirProvider extends DocumentsProvider {
             LogUtil.d(TAG, "display name = " + flashAirFileInfo.mFileName);
             RowBuilder row = cursor.newRow();
             row.add(Document.COLUMN_DISPLAY_NAME, flashAirFileInfo.mFileName);
-            row.add(Document.COLUMN_DOCUMENT_ID, documentId + "/" + flashAirFileInfo.mFileName);
+            if (documentId.equals("/")) {
+                row.add(Document.COLUMN_DOCUMENT_ID, documentId + flashAirFileInfo.mFileName);
+            } else {
+                row.add(Document.COLUMN_DOCUMENT_ID, documentId + "/" + flashAirFileInfo.mFileName);
+            }
             row.add(Document.COLUMN_SIZE, flashAirFileInfo.mSize);
+            row.add(Document.COLUMN_LAST_MODIFIED, null);
+            String mimeType = flashAirFileInfo.isDirectory() ? Document.MIME_TYPE_DIR
+                    : getMimeType(flashAirFileInfo.mFileName);
+            LogUtil.d(TAG, "mimetype " + mimeType);
+            row.add(Document.COLUMN_MIME_TYPE, mimeType);
             int flags = 0;
             if (flashAirFileInfo.isDirectory()) {
                 flags = flags | Document.FLAG_DIR_PREFERS_LAST_MODIFIED;
             }
+            if (mimeType != null && mimeType.equals("image/jpeg")) {
+                flags = flags | Document.FLAG_SUPPORTS_THUMBNAIL;
+            }
             row.add(Document.COLUMN_FLAGS, flags);
-            row.add(Document.COLUMN_LAST_MODIFIED, null);
-            row.add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR);
         }
+    }
+
+    @SuppressLint("DefaultLocale")
+    private String getMimeType(String filePath) {
+        filePath = filePath.toLowerCase(Locale.getDefault());
+        String mimeType = MIMETYPE_UNKNOWN;
+        String extension = null;
+        int index = filePath.lastIndexOf(".");
+        if (index > 0) {
+            extension = filePath.substring(index + 1);
+        }
+        MimeTypeMap mime = MimeTypeMap.getSingleton();
+        if (extension != null) {
+            mimeType = mime.getMimeTypeFromExtension(extension);
+        }
+        return mimeType;
     }
 
     @Override
@@ -127,6 +185,76 @@ public class FlashAirProvider extends DocumentsProvider {
             CancellationSignal signal)
             throws FileNotFoundException {
         LogUtil.d(TAG, "openDocument");
-        return null;
+        // File file = new File("http://flashair" + documentId);
+        File file = new File(downloadFile("http://flashair" + documentId));
+
+        int accessMode = ParcelFileDescriptor.MODE_READ_ONLY;
+        return ParcelFileDescriptor.open(file, accessMode);
+    }
+
+    private String downloadFile(String urlString) {
+        File cacheDir = getContext().getCacheDir();
+        File outputFile = new File(cacheDir, String.valueOf(System.currentTimeMillis()));
+        URL url;
+        URLConnection urlConnection;
+        InputStream inputStream = null;
+        BufferedInputStream bufferedInputStream = null;
+        FileOutputStream fileOutputStream = null;
+        try {
+            url = new URL(urlString);
+            urlConnection = url.openConnection();
+            inputStream = urlConnection.getInputStream();
+            bufferedInputStream = new BufferedInputStream(inputStream, BUFFER_SIZE);
+            fileOutputStream = new FileOutputStream(outputFile);
+
+            int len;
+            while ((len = bufferedInputStream.read(buffer)) != -1) {
+                fileOutputStream.write(buffer, 0, len);
+            }
+        } catch (MalformedURLException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } finally {
+            try {
+                if (fileOutputStream != null) {
+                    fileOutputStream.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (bufferedInputStream != null) {
+                    bufferedInputStream.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return outputFile.getPath();
+    }
+
+    @Override
+    public AssetFileDescriptor openDocumentThumbnail(String documentId, Point sizeHint,
+            CancellationSignal signal) throws FileNotFoundException {
+        LogUtil.d(TAG, "openDocumentThumbnail");
+        File file = new File(downloadFile("http://flashair/thumbnail.cgi?" + documentId));
+
+        int accessMode = ParcelFileDescriptor.MODE_READ_ONLY;
+        ParcelFileDescriptor fd = ParcelFileDescriptor.open(file, accessMode);
+        int startOffset = 0;
+        int length = 0;
+        AssetFileDescriptor assetFileDescriptor = new AssetFileDescriptor(fd, startOffset, length);
+        return assetFileDescriptor;
     }
 }
