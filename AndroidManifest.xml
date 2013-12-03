@@ -27,7 +27,7 @@
 
         <provider
             android:name="co.natsuhi.flprovider.FlashAirProvider"
-            android:authorities="com.example.mycloud.documents"
+            android:authorities="co.natsuhi.flprovider"
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS" >
