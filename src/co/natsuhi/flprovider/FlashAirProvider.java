@@ -31,6 +31,7 @@ import co.natsuhi.flprovider.util.LogUtil;
 
 public class FlashAirProvider extends DocumentsProvider {
     private static final String TAG = "FlashAirProvider";
+    @SuppressWarnings("unused")
     private final FlashAirProvider self = this;
     private static final String ROOT_DOCUMENT_ID = "flashairroot";
     private final int BUFFER_SIZE = 1024;
@@ -62,7 +63,7 @@ public class FlashAirProvider extends DocumentsProvider {
     }
 
     private String[] resolveRootProjection(String[] projection) {
-
+        LogUtil.d(TAG, "resolveRootProjection");
         if (projection == null || projection.length == 0) {
             return new String[] {
                     Root.COLUMN_ROOT_ID,
@@ -112,6 +113,7 @@ public class FlashAirProvider extends DocumentsProvider {
      * @param documentId
      */
     private void includeRootFile(MatrixCursor cursor, String documentId) {
+        LogUtil.d(TAG, "includeRootFile");
         RowBuilder row = cursor.newRow();
         row.add(Document.COLUMN_DISPLAY_NAME, "/");
         row.add(Document.COLUMN_DOCUMENT_ID, "/");
@@ -121,9 +123,19 @@ public class FlashAirProvider extends DocumentsProvider {
         row.add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR);
     }
 
+    /**
+     * 指定されたディレクトリの中をCursorに詰めていく
+     * 
+     * @param cursor
+     * @param documentId
+     */
     private void includeFile(MatrixCursor cursor, String documentId) {
         LogUtil.d(TAG, "includeFile");
-        List<FlashAirFileInfo> fileInfos = FlashAirUtils.getFileList(documentId);
+        // Cursorに値を入れていく
+        if (documentId.equals("/")) {
+            documentId = "";
+        }
+        List<FlashAirFileInfo> fileInfos = FlashAirUtils.getFileList("/" + documentId);
         if (fileInfos == null) {
             return;
         }
@@ -132,10 +144,11 @@ public class FlashAirProvider extends DocumentsProvider {
             LogUtil.d(TAG, "display name = " + flashAirFileInfo.mFileName);
             RowBuilder row = cursor.newRow();
             row.add(Document.COLUMN_DISPLAY_NAME, flashAirFileInfo.mFileName);
-            if (documentId.equals("/")) {
-                row.add(Document.COLUMN_DOCUMENT_ID, documentId + flashAirFileInfo.mFileName);
+            if (documentId.equals("")) {
+                row.add(Document.COLUMN_DOCUMENT_ID, "/" + flashAirFileInfo.mFileName);
             } else {
-                row.add(Document.COLUMN_DOCUMENT_ID, documentId + "/" + flashAirFileInfo.mFileName);
+                row.add(Document.COLUMN_DOCUMENT_ID, "/" + documentId + "/"
+                        + flashAirFileInfo.mFileName);
             }
             row.add(Document.COLUMN_SIZE, flashAirFileInfo.mSize);
             row.add(Document.COLUMN_LAST_MODIFIED, null);
@@ -185,14 +198,23 @@ public class FlashAirProvider extends DocumentsProvider {
             CancellationSignal signal)
             throws FileNotFoundException {
         LogUtil.d(TAG, "openDocument");
+        // ファイルをダウンロードして渡す
         // File file = new File("http://flashair" + documentId);
-        File file = new File(downloadFile("http://flashair" + documentId));
+        File file = new File(downloadFile(FlashAirUtils.BASE + documentId));
 
         int accessMode = ParcelFileDescriptor.MODE_READ_ONLY;
         return ParcelFileDescriptor.open(file, accessMode);
     }
 
+    /**
+     * 指定したURLからファイルをダウンロードする。ファイル名は時間
+     * 
+     * @param urlString
+     * @return
+     */
     private String downloadFile(String urlString) {
+        // TODO:別クラスにする
+        // TODO:キャッシュの仕組みを作る
         File cacheDir = getContext().getCacheDir();
         File outputFile = new File(cacheDir, String.valueOf(System.currentTimeMillis()));
         URL url;
@@ -248,7 +270,8 @@ public class FlashAirProvider extends DocumentsProvider {
     public AssetFileDescriptor openDocumentThumbnail(String documentId, Point sizeHint,
             CancellationSignal signal) throws FileNotFoundException {
         LogUtil.d(TAG, "openDocumentThumbnail");
-        File file = new File(downloadFile("http://flashair/thumbnail.cgi?" + documentId));
+        // サムネをダウンロードして渡す
+        File file = new File(downloadFile(FlashAirUtils.THUMBNAIL + "/" + documentId));
 
         int accessMode = ParcelFileDescriptor.MODE_READ_ONLY;
         ParcelFileDescriptor fd = ParcelFileDescriptor.open(file, accessMode);
