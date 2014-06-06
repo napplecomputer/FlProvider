@@ -56,7 +56,10 @@ public class FlashAirProvider extends DocumentsProvider {
         row.add(Root.COLUMN_TITLE, "FlashAir");
         row.add(Root.COLUMN_DOCUMENT_ID, ROOT_DOCUMENT_ID);
         row.add(Root.COLUMN_MIME_TYPES, "*/*");
-        row.add(Root.COLUMN_AVAILABLE_BYTES, Integer.MAX_VALUE);
+        long[] availableBytes = FlashAirUtils.getSize();
+        if (availableBytes != null) {
+            row.add(Root.COLUMN_AVAILABLE_BYTES, availableBytes[0]);
+        }
         row.add(Root.COLUMN_ICON, R.drawable.ic_launcher);
 
         return cursor;
