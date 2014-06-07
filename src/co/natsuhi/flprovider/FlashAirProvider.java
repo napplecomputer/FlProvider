@@ -42,7 +42,8 @@ public class FlashAirProvider extends DocumentsProvider {
     @Override
     public boolean onCreate() {
         LogUtil.d(TAG, "onCreate");
-        // TODO:FlashAirへの接続準備
+        // TODO:FlashAirに接続できているか確認して返す値を変えたい
+        // メインスレッドなのでそのままじゃリクエスト投げられないよ！
         return true;
     }
 
@@ -65,6 +66,12 @@ public class FlashAirProvider extends DocumentsProvider {
         return cursor;
     }
 
+    /**
+     * {@link FlashAirProvider#queryRoots(String[])}で使うCursorのカラム名を返す
+     * 
+     * @param projection
+     * @return 引数のprojectionが空の場合:必要な値、空ではない場合:引数のprojectionをそのまま
+     */
     private String[] resolveRootProjection(String[] projection) {
         LogUtil.d(TAG, "resolveRootProjection");
         if (projection == null || projection.length == 0) {
@@ -93,6 +100,14 @@ public class FlashAirProvider extends DocumentsProvider {
         return cursor;
     }
 
+    /**
+     * {@link FlashAirProvider#queryDocument(String, String[])}と
+     * {@link FlashAirProvider#queryChildDocuments(String, String[], String)}
+     * で使用するCursorのカラム名を返す。
+     * 
+     * @param projection
+     * @return
+     */
     private String[] resolveDocumentProjection(String[] projection) {
         LogUtil.d(TAG, "resoveDocumentProjection");
         if (projection == null || projection.length == 0) {
@@ -110,7 +125,8 @@ public class FlashAirProvider extends DocumentsProvider {
     }
 
     /**
-     * RootDir用
+     * RootDir用<br />
+     * 今回はqueryRootsで1行しか返していないので、固定の値が返る。
      * 
      * @param cursor
      * @param documentId
@@ -273,6 +289,7 @@ public class FlashAirProvider extends DocumentsProvider {
     public AssetFileDescriptor openDocumentThumbnail(String documentId, Point sizeHint,
             CancellationSignal signal) throws FileNotFoundException {
         LogUtil.d(TAG, "openDocumentThumbnail");
+        LogUtil.d(TAG, "documentId:" + documentId);
         // サムネをダウンロードして渡す
         File file = new File(downloadFile(FlashAirUtils.THUMBNAIL + "/" + documentId));
 
