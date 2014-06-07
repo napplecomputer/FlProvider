@@ -151,10 +151,10 @@ public class FlashAirProvider extends DocumentsProvider {
     private void includeFile(MatrixCursor cursor, String documentId) {
         LogUtil.d(TAG, "includeFile");
         // Cursorに値を入れていく
-        if (documentId.equals("/")) {
-            documentId = "";
+        if (documentId.equals("")) {
+            documentId = "/";
         }
-        List<FlashAirFileInfo> fileInfos = FlashAirUtils.getFileList("/" + documentId);
+        List<FlashAirFileInfo> fileInfos = FlashAirUtils.getFileList(documentId);
         if (fileInfos == null) {
             return;
         }
@@ -163,10 +163,10 @@ public class FlashAirProvider extends DocumentsProvider {
             LogUtil.d(TAG, "display name = " + flashAirFileInfo.mFileName);
             RowBuilder row = cursor.newRow();
             row.add(Document.COLUMN_DISPLAY_NAME, flashAirFileInfo.mFileName);
-            if (documentId.equals("")) {
+            if (documentId.equals("/")) {
                 row.add(Document.COLUMN_DOCUMENT_ID, "/" + flashAirFileInfo.mFileName);
             } else {
-                row.add(Document.COLUMN_DOCUMENT_ID, "/" + documentId + "/"
+                row.add(Document.COLUMN_DOCUMENT_ID, documentId + "/"
                         + flashAirFileInfo.mFileName);
             }
             row.add(Document.COLUMN_SIZE, flashAirFileInfo.mSize);
